@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}Home - Personal Finance Tracker{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="text-center p-5 bg-light shadow-sm rounded-3 mb-4">
+  <h1 class="display-4 fw-bold">💰 Take Control of Your Finances</h1>
+  <p class="lead">Track income, manage expenses, and achieve your financial goals with ease.</p>
+  <div class="mt-3">
+    <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg me-2">Get Started</a>
+    <a href="{{ url_for('login') }}" class="btn btn-outline-dark btn-lg">Login</a>
+  </div>
+</section>
+
+<!-- Features -->
+<div class="container mt-5">
+  <div class="row g-4">
+    <div class="col-md-3">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="fs-1">📊</h2>
+          <h5 class="card-title">Track Income</h5>
+          <p class="card-text">Add and monitor your monthly income sources easily.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="fs-1">💸</h2>
+          <h5 class="card-title">Manage Expenses</h5>
+          <p class="card-text">Stay on top of your daily, monthly, and yearly expenses.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="fs-1">🎯</h2>
+          <h5 class="card-title">Set Goals</h5>
+          <p class="card-text">Plan for your dream bike, gadget, or future investment.</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center shadow-sm h-100">
+        <div class="card-body">
+          <h2 class="fs-1">📈</h2>
+          <h5 class="card-title">Get Insights</h5>
+          <p class="card-text">Visualize your progress with beautiful charts and reports.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Reviews Section -->
+<section class="bg-dark text-white text-center mt-5 p-5 rounded-3">
+  <h2 style="color: white;">💬 What Our Users Say </h2>
+  <div class="row mt-4">
+    <div class="col-md-4">
+      <blockquote class="blockquote">
+        <p>"This app helped me save for my first bike. Super easy!"</p>
+        <footer class="blockquote-footer text-white">Rohit, Student</footer>
+      </blockquote>
+    </div>
+    <div class="col-md-4">
+      <blockquote class="blockquote">
+        <p>"Now I know exactly where my money goes every month."</p>
+        <footer class="blockquote-footer text-white">Priya, Designer</footer>
+      </blockquote>
+    </div>
+    <div class="col-md-4">
+      <blockquote class="blockquote">
+        <p>"The goals feature kept me motivated to reduce expenses."</p>
+        <footer class="blockquote-footer text-white">Amit, Manager</footer>
+      </blockquote>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="text-center mt-5 p-3 border-top">
+  <p>© 2025 Personal Finance Tracker. Built with ❤️ for smarter money management.</p>
+</footer>
+{% endblock %}

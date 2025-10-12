@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Reviews{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <div class="card shadow p-4">
+    <h2 class="mb-3 text-center">📝 User Reviews</h2>
+    <p class="text-muted text-center">Here’s what our users say about us</p>
+    <hr>
+    <div class="row g-4 mt-3">
+      <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+          <p>"This app made me realize where my money was going each month. Now I save 20% more!"</p>
+          <h6 class="text-end">- Om Ninawe</h6>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+          <p>"The goal tracking feature motivated me to finally buy my dream bike & car without loans."</p>
+          <h6 class="text-end">- Nihal Bawankule</h6>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card p-3 shadow-sm h-100">
+          <p>"Simple, elegant and super useful for budgeting. Highly recommend to my friends!"</p>
+          <h6 class="text-end">- Maithili Dhage</h6>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✨ New Review Submission Box -->
+    <div class="mt-5 p-4 bg-dark text-white rounded-3 text-center shadow">
+      <h4>💌 Want to share your experience?</h4>
+      <p>We’d love to hear from you! Send your review to:</p>
+      <a href="expensetracker2025.com" class="btn btn-outline-light mt-2">
+        Send Your Review
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

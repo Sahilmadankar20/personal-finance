@@ -1,0 +1,200 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container">
+  <h2 class="mb-4">📊 Your Financial Dashboard</h2>
+
+  <!-- Top Stats Cards -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center p-3">
+        <h4>💰 Income</h4>
+        <p class="fs-4 fw-bold">₹{{ monthly_income }}</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center p-3">
+        <h4>💸 Expenses</h4>
+        <p class="fs-4 fw-bold">₹{{ monthly_expenses }}</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card shadow-sm text-center p-3">
+        <h4>💵 Savings</h4>
+        <p class="fs-4 fw-bold {% if (monthly_income - monthly_expenses) < 0 %}text-danger{% else %}text-success{% endif %}">
+          ₹{{ (monthly_income - monthly_expenses)|round(2) }}
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Alerts / Notifications -->
+  {% if warning %}
+    <div class="alert alert-danger">{{ warning }}</div>
+  {% endif %}
+
+  <!-- Profile Update -->
+  <div class="card shadow-sm p-3 mb-4">
+    <h5>Update Profile</h5>
+    <form action="{{ url_for('update_profile') }}" method="POST">
+      <div class="mb-2">
+        <input type="text" class="form-control" name="occupation" placeholder="Occupation" value="{{ user.occupation or '' }}">
+      </div>
+      <div class="mb-2">
+        <input type="number" class="form-control" name="monthly_income" placeholder="Monthly Income" value="{{ user.monthly_income or '' }}">
+      </div>
+      <div class="mb-2">
+        <input type="number" class="form-control" name="current_savings" placeholder="Current Savings" value="{{ user.current_savings or '' }}">
+      </div>
+      <button type="submit" class="btn btn-primary">Update</button>
+    </form>
+  </div>
+
+  <!-- Add Expense Form -->
+  <div class="card shadow-sm p-3 mb-4">
+    <h5>Add New Expense</h5>
+    <form action="{{ url_for('add_expense') }}" method="POST">
+      <div class="mb-2"><input type="text" class="form-control" name="title" placeholder="Expense Title" required></div>
+      <div class="mb-2"><input type="number" step="0.01" class="form-control" name="amount" placeholder="Amount" required></div>
+      <div class="mb-2">
+        <select class="form-select" name="frequency">
+          <option value="daily">Daily</option>
+          <option value="monthly" selected>Monthly</option>
+          <option value="yearly">Yearly</option>
+        </select>
+      </div>
+      <div class="mb-2"><textarea class="form-control" name="description" placeholder="Description (optional)"></textarea></div>
+      <button type="submit" class="btn btn-success">Add Expense</button>
+    </form>
+  </div>
+
+  <!-- Goal Tracker -->
+  <div class="card shadow-sm p-3 mb-4">
+    <h5>🎯 Goal Tracker</h5>
+    <form action="{{ url_for('add_goal') }}" method="POST" class="mb-3">
+      <div class="row g-2">
+        <div class="col-md-6">
+          <input type="text" name="goal_title" class="form-control" placeholder="Goal title" required>
+        </div>
+        <div class="col-md-4">
+          <input type="number" step="0.01" name="goal_amount" class="form-control" placeholder="Target Amount" required>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" class="btn btn-primary w-100">Add Goal</button>
+        </div>
+      </div>
+    </form>
+
+    {% if goals %}
+      <h6 class="mt-3">Your Goals</h6>
+      <table class="table table-striped table-bordered mt-2">
+        <thead class="table-dark">
+          <tr>
+            <th>Goal</th>
+            <th>Target (₹)</th>
+            <th>Created On</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in goals %}
+          <tr>
+            <td>{{ g.title }}</td>
+            <td>{{ g.target_amount }}</td>
+            <td>{{ g.date_created.strftime('%d-%m-%Y') }}</td>
+            <td>{{ g.status }}</td>
+            <td>
+              <form action="{{ url_for('delete_goal', goal_id=g.id) }}" method="POST" style="display:inline;">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No goals added yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Expense History -->
+  <div class="card shadow-sm p-3 mb-4">
+    <h5>Expense History</h5>
+    {% if expenses %}
+      <table class="table table-striped table-bordered">
+        <thead class="table-dark">
+          <tr>
+            <th>Title</th>
+            <th>Amount</th>
+            <th>Frequency</th>
+            <th>Description</th>
+            <th>Date</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in expenses %}
+          <tr>
+            <td>{{ e.title }}</td>
+            <td>₹{{ e.amount }}</td>
+            <td>{{ e.frequency }}</td>
+            <td>{{ e.description or '-' }}</td>
+            <td>{{ e.date_recorded.strftime('%d-%m-%Y') }}</td>
+            <td>
+              <form action="{{ url_for('delete_expense', expense_id=e.id) }}" method="POST" style="display:inline;">
+                <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>No expenses recorded yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Export Buttons -->
+  <div class="mb-4">
+    <a href="{{ url_for('export_pdf') }}" class="btn btn-outline-primary">Export PDF</a>
+    <a href="{{ url_for('export_csv') }}" class="btn btn-outline-secondary">Export CSV</a>
+  </div>
+
+  <!-- Clear Dashboard Button -->
+  <div class="mt-4">
+    <form action="{{ url_for('clear_dashboard') }}" method="POST" onsubmit="return confirm('Are you sure you want to clear all your data?');">
+      <button type="submit" class="btn btn-outline-danger">🗑️ Clear Dashboard Data</button>
+    </form>
+  </div>
+
+  <!-- Loan Calculator -->
+  <div class="card shadow-sm p-3 mt-5 mb-5">
+    <h5>🏦 Loan Calculator</h5>
+    <form method="POST">
+      <div class="row g-2">
+        <div class="col-md-4">
+          <input type="number" step="0.01" class="form-control" name="principal" placeholder="Principal Amount (₹)" required>
+        </div>
+        <div class="col-md-4">
+          <input type="number" step="0.01" class="form-control" name="annual_rate" placeholder="Annual Interest Rate (%)" required>
+        </div>
+        <div class="col-md-4">
+          <input type="number" step="0.1" class="form-control" name="years" placeholder="Years" required>
+        </div>
+      </div>
+      <button type="submit" name="loan_submit" class="btn btn-success mt-3">Calculate</button>
+    </form>
+
+    {% if loan_result %}
+      <div class="mt-3">
+        <p>💵 Monthly EMI: ₹{{ loan_result.emi }}</p>
+        <p>💰 Total Payment: ₹{{ loan_result.total_payment }}</p>
+        <p>💸 Total Interest: ₹{{ loan_result.total_interest }}</p>
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}
