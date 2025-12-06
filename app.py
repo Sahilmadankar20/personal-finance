@@ -2,7 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user, UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import date
+from datetime import date, datetime, timedelta
 import os, math, io, csv
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -58,13 +58,20 @@ class Goal(db.Model):
     title = db.Column(db.String(255), nullable=False)
     target_amount = db.Column(db.Numeric(12, 2), nullable=False)
     date_created = db.Column(db.Date, default=date.today)
+    # numeric priority (1 = highest). Default 5 if not provided.
+    priority = db.Column(db.Integer, default=5, nullable=False)
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+
 # ---- Helpers ----
 def monthly_expense_total(user):
+    """
+    Returns: (monthly_total_as_float, categories_dict)
+    Converts daily/yearly frequencies into monthly equivalents.
+    """
     expenses = Expense.query.filter_by(user_id=user.id).all()
     total = 0.0
     categories = {}
@@ -81,6 +88,82 @@ def monthly_expense_total(user):
         categories.setdefault(key, 0.0)
         categories[key] += m
     return total, categories
+
+def predict_goals_sequential(user, monthly_saving, current_savings):
+    """
+    Sequential prediction algorithm using numeric priorities:
+    - Sort goals by numeric priority ascending (1 = highest), then by creation date.
+    - Use current_savings as immediate pot applied to the first goals in order.
+    - For remaining amount, compute fractional months needed = remaining / monthly_saving.
+      Convert months to days using average month length (30.44 days).
+    - Next goal's start_date = previous goal end_date.
+    Returns list of dicts with start_date, end_date, status, progress_percent.
+    """
+    results = []
+    # Fetch goals and sort by numeric priority then date_created then id
+    goals = sorted(
+        Goal.query.filter_by(user_id=user.id).all(),
+        key=lambda g: (g.priority if g.priority is not None else 9999, g.date_created, g.id)
+    )
+
+    start_dt = datetime.today()
+    remaining_pot = float(current_savings or 0.0)
+    avg_days_per_month = 30.44  # realistic month average
+
+    # Snapshot to show how much of each goal is already covered by current savings (progress)
+    original_savings = remaining_pot
+
+    for g in goals:
+        target = float(g.target_amount)
+        # progress percent based on original_savings towards the specific goal (bounded to 100)
+        if original_savings <= 0:
+            progress_percent = 0.0
+        else:
+            progress_percent = min(100.0, (original_savings / target) * 100.0)
+
+        if target <= 0:
+            end_dt = start_dt
+            status = "Invalid target"
+        else:
+            # If current pot covers the goal immediately:
+            if remaining_pot >= target:
+                end_dt = start_dt  # achieved now
+                status = f"✅ You can afford '{g.title}' now!"
+                remaining_pot -= target
+            else:
+                # use whatever remains from the pot
+                still_needed = target - remaining_pot
+                if monthly_saving <= 0:
+                    end_dt = None
+                    status = f"❌ Can't predict '{g.title}' (no monthly savings)."
+                    remaining_pot = 0.0
+                else:
+                    months_needed = still_needed / monthly_saving  # fractional months allowed
+                    days_needed = months_needed * avg_days_per_month
+                    # ensure at least 1 day if something is needed
+                    days_needed = max(1.0, days_needed)
+                    end_dt = start_dt + timedelta(days=days_needed)
+                    remaining_pot = 0.0
+                    status = f"⏳ Predicted by {end_dt.strftime('%d-%m-%Y')}"
+        results.append({
+            'goal': g,
+            'start_date': start_dt,
+            'end_date': end_dt,
+            'status': status,
+            'progress_percent': round(progress_percent, 2),
+            'priority': int(g.priority or 0)
+        })
+        # Next goal starts at end_dt (if end_dt is None, future goals cannot be predicted - keep same start)
+        last_end = results[-1]['end_date']
+        if last_end:
+            # next goal starts right after this end
+            start_dt = last_end
+        else:
+            # cannot predict further; keep start_dt unchanged (or break if you prefer)
+            start_dt = last_end or start_dt
+
+    return results
+
 
 # ---- Routes ----
 @app.route('/')
@@ -176,7 +259,7 @@ def dashboard():
     expense_values = list(categories.values())
 
     expenses = Expense.query.filter_by(user_id=user.id).order_by(Expense.date_recorded.desc()).all()
-    goals = Goal.query.filter_by(user_id=user.id).all()
+    goals = Goal.query.filter_by(user_id=user.id).order_by(Goal.priority, Goal.date_created).all()
 
     monthly_income = float(user.monthly_income or 0)
     current_savings = float(user.current_savings or 0)
@@ -184,22 +267,8 @@ def dashboard():
 
     warning = "⚠️ Expenses exceed income!" if monthly_total > monthly_income else ""
 
-    # Goal statuses
-    for g in goals:
-        goal_cost = float(g.target_amount)
-        if monthly_savings > 0:
-            remaining = goal_cost - current_savings
-            months_needed = math.ceil(remaining / monthly_savings)
-            future_date = date.today().replace(day=1)
-            month = (future_date.month + months_needed - 1) % 12 + 1
-            year = future_date.year + ((future_date.month + months_needed - 1) // 12)
-            future_month = date(year, month, 1).strftime('%d-%m-%Y')
-            if current_savings >= goal_cost:
-                g.status = f"✅ You can afford '{g.title}' now!"
-            else:
-                g.status = f"⏳ You can afford '{g.title}' by {future_month}."
-        else:
-            g.status = f"❌ You can't afford '{g.title}' yet (no monthly savings)."
+    # Use the sequential prediction helper
+    predicted_goals = predict_goals_sequential(user, monthly_savings, current_savings)
 
     # --- Loan Calculator ---
     loan_result = None
@@ -242,25 +311,36 @@ def dashboard():
                            expense_values=expense_values,
                            warning=warning,
                            goals=goals,
+                           predicted_goals=predicted_goals,
                            loan_result=loan_result)
+
 
 # ---- Add / Delete Goal & Expense ----
 @app.route('/goal/add', methods=['POST'])
 @login_required
 def add_goal():
     title = request.form.get('goal_title', '').strip()
-    target = float(request.form.get('goal_amount', 0))
+    try:
+        target = float(request.form.get('goal_amount', 0))
+    except:
+        target = 0.0
+    # parse priority (integer). Default to 5 if missing or invalid.
+    try:
+        priority = int(request.form.get('priority', 5))
+    except:
+        priority = 5
+
     if not title or target <= 0:
         flash('Please enter a valid goal and amount.', 'warning')
         return redirect(url_for('dashboard'))
     try:
-        goal = Goal(user_id=current_user.id, title=title, target_amount=target)
+        goal = Goal(user_id=current_user.id, title=title, target_amount=target, priority=priority)
         db.session.add(goal)
         db.session.commit()
         flash('Goal added successfully!', 'success')
-    except:
+    except Exception as ex:
         db.session.rollback()
-        flash('Error adding goal.', 'danger')
+        flash('Error adding goal: ' + str(ex), 'danger')
     return redirect(url_for('dashboard'))
 
 @app.route('/goal/delete/<int:goal_id>', methods=['POST'])
@@ -292,9 +372,9 @@ def add_expense():
         db.session.add(e)
         db.session.commit()
         flash('Expense added', 'success')
-    except:
+    except Exception as ex:
         db.session.rollback()
-        flash('Error adding expense', 'danger')
+        flash('Error adding expense: ' + str(ex), 'danger')
     return redirect(url_for('dashboard'))
 
 @app.route('/expenses/delete/<int:expense_id>', methods=['POST'])
@@ -313,6 +393,7 @@ def delete_expense(expense_id):
         flash('Error deleting expense', 'danger')
     return redirect(url_for('dashboard'))
 
+
 # ---- Export CSV / PDF ----
 @app.route('/export_csv')
 @login_required
@@ -327,38 +408,27 @@ def export_csv():
     for e in expenses:
         cw.writerow([e.title, float(e.amount), e.frequency, e.description or '', e.date_recorded.strftime('%d-%m-%Y')])
 
-    # Goals
+    # Goals with predictions (use same helper)
     cw.writerow([])
     cw.writerow(['Goals'])
-    cw.writerow(['Title', 'Target Amount', 'Date Created', 'Status'])
+    cw.writerow(['Title', 'Target Amount', 'Date Created', 'Priority', 'Predicted Completion', 'Status'])
 
     monthly_income = float(current_user.monthly_income or 0)
     current_savings = float(current_user.current_savings or 0)
     monthly_total, _ = monthly_expense_total(current_user)
     monthly_savings = monthly_income - monthly_total
 
-    goals = Goal.query.filter_by(user_id=current_user.id).all()
-    for g in goals:
-        goal_cost = float(g.target_amount)
-        if monthly_savings > 0:
-            remaining = goal_cost - current_savings
-            months_needed = math.ceil(max(0, remaining) / monthly_savings)
-            future_date = date.today().replace(day=1)
-            month = (future_date.month + months_needed - 1) % 12 + 1
-            year = future_date.year + ((future_date.month + months_needed - 1) // 12)
-            future_month = date(year, month, 1).strftime('%d-%m-%Y')
-            if current_savings >= goal_cost:
-                status = f"✅ You can afford '{g.title}' now!"
-            else:
-                status = f"⏳ You can afford '{g.title}' by {future_month}."
-        else:
-            status = f"❌ You can't afford '{g.title}' yet (no monthly savings)."
-        cw.writerow([g.title, float(g.target_amount), g.date_created.strftime('%d-%m-%Y'), status])
+    predicted = predict_goals_sequential(current_user, monthly_savings, current_savings)
+    for p in predicted:
+        g = p['goal']
+        pred_end = p['end_date'].strftime('%d-%m-%Y') if p['end_date'] else 'N/A'
+        cw.writerow([g.title, float(g.target_amount), g.date_created.strftime('%d-%m-%Y'), int(g.priority or 0), pred_end, p['status']])
 
     output = io.BytesIO()
     output.write(si.getvalue().encode('utf-8'))
     output.seek(0)
     return send_file(output, mimetype='text/csv', as_attachment=True, download_name='dashboard.csv')
+
 
 @app.route('/export_pdf')
 @login_required
@@ -368,7 +438,7 @@ def export_pdf():
     elements = []
     styles = getSampleStyleSheet()
     elements.append(Paragraph(f"{current_user.name}'s Dashboard", styles['Title']))
-    
+
     # Expenses Table
     expenses = Expense.query.filter_by(user_id=current_user.id).all()
     data = [['Title','Amount','Frequency','Description','Date']]
@@ -385,32 +455,19 @@ def export_pdf():
     elements.append(Paragraph("Expenses", styles['Heading2']))
     elements.append(t)
 
-    # Goals Table
-    goals = Goal.query.filter_by(user_id=current_user.id).all()
-    data = [['Title','Target Amount','Date Created','Status']]
-
+    # Goals Table with predicted completion from helper
     monthly_income = float(current_user.monthly_income or 0)
     current_savings = float(current_user.current_savings or 0)
     monthly_total, _ = monthly_expense_total(current_user)
     monthly_savings = monthly_income - monthly_total
 
-    for g in goals:
-        goal_cost = float(g.target_amount)
-        if monthly_savings > 0:
-            remaining = goal_cost - current_savings
-            months_needed = math.ceil(max(0, remaining) / monthly_savings)
-            future_date = date.today().replace(day=1)
-            month = (future_date.month + months_needed - 1) % 12 + 1
-            year = future_date.year + ((future_date.month + months_needed - 1) // 12)
-            future_month = date(year, month, 1).strftime('%d-%m-%Y')
-            if current_savings >= goal_cost:
-                status = f"✅ You can afford '{g.title}' now!"
-            else:
-                status = f"⏳ You can afford '{g.title}' by {future_month}."
-        else:
-            status = f"❌ You can't afford '{g.title}' yet (no monthly savings)."
-        data.append([g.title, float(g.target_amount), g.date_created.strftime('%d-%m-%Y'), status])
-    
+    predicted = predict_goals_sequential(current_user, monthly_savings, current_savings)
+    data = [['Title','Target Amount','Date Created','Priority','Predicted Completion','Status']]
+    for p in predicted:
+        g = p['goal']
+        pred_end = p['end_date'].strftime('%d-%m-%Y') if p['end_date'] else 'N/A'
+        data.append([g.title, float(g.target_amount), g.date_created.strftime('%d-%m-%Y'), int(g.priority or 0), pred_end, p['status']])
+
     t=Table(data, hAlign='LEFT')
     t.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#198754")),
@@ -425,6 +482,7 @@ def export_pdf():
     doc.build(elements)
     buffer.seek(0)
     return send_file(buffer, as_attachment=True, download_name='dashboard.pdf', mimetype='application/pdf')
+
 
 # ---- Clear Dashboard ----
 @app.route('/dashboard/clear', methods=['POST'])
