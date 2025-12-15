@@ -12,8 +12,11 @@ from reportlab.lib.styles import getSampleStyleSheet
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///finance.db')
+
+# FORCE SQLITE ONLY
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///instance/finance.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
 
 db = SQLAlchemy(app)
 login_manager = LoginManager(app)
@@ -530,3 +533,5 @@ if __name__ == "__main__":
     with app.app_context():
         db.create_all()
     app.run(debug=True)
+
+
